@@ -1,3 +1,4 @@
+from flask import Flask, request, jsonify
 import firebase_admin
 from firebase_admin import credentials, firestore
 import pandas as pd
@@ -10,8 +11,10 @@ import nltk
 nltk.download('punkt')
 nltk.download('stopwords')
 
+app = Flask(__name__)
+
 # Initialize Firebase Admin SDK
-cred = credentials.Certificate("unfolding-aspirants-firebase-adminsdk-pb6dd-dce071f97b.json")
+cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred)
 
 db = firestore.client()
@@ -41,6 +44,10 @@ events_data['Description'] = events_data['Description'].apply(preprocess_text)
 courses_data['Description'] = courses_data['Description'].apply(preprocess_text)
 books_data['Description'] = books_data['Description'].apply(preprocess_text)
 
+# Convert skills and interests to lists
+users_data['skills'] = users_data['skills'].apply(lambda x: x if isinstance(x, list) else x.split('; '))
+users_data['interests'] = users_data['interests'].apply(lambda x: x if isinstance(x, list) else x.split('; '))
+
 # Extract features using TF-IDF
 vectorizer = TfidfVectorizer()
 all_descriptions = pd.concat([events_data['Description'], courses_data['Description'], books_data['Description']])
@@ -49,7 +56,6 @@ vectorizer.fit(all_descriptions)
 events_features = vectorizer.transform(events_data['Description'])
 courses_features = vectorizer.transform(courses_data['Description'])
 books_features = vectorizer.transform(books_data['Description'])
-
 
 # Recommendation Function
 def get_recommendations(user_doc_id):
@@ -72,8 +78,14 @@ def get_recommendations(user_doc_id):
     scores.sort(key=lambda x: x[2], reverse=True)
     return scores[:5]
 
-# Example Usage
-user_doc_id = input('Enter User Document ID: ')
-recommendations = get_recommendations(user_doc_id)
-for item_type, doc_id, similarity in recommendations:
-    print(f"{item_type.title()} Document ID - {doc_id}, Similarity Score: {similarity:.2f}")
+@app.route('/recommend', methods=['GET'])
+def recommend():
+    user_doc_id = request.args.get('user_doc_id')
+    try:
+        recommendations = get_recommendations(user_doc_id)
+        return jsonify(recommendations)
+    except ValueError as e:
+        return str(e), 400
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
